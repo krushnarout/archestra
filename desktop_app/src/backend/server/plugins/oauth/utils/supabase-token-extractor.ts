@@ -21,95 +21,12 @@ export const SUPABASE_TOKEN_EXTRACTION_SCRIPT = `
       console.log('[Supabase Token Extraction] Starting token extraction...');
       console.log('[Supabase Token Extraction] Current URL:', window.location.href);
       
-      // Try to extract project reference from URL
-      let projectRef = '{{PROJECT_REF}}';
-      
-      if (!projectRef || projectRef === 'null') {
-        const urlMatch = window.location.pathname.match(/\/dashboard\/project\/([a-zA-Z0-9-_]+)/);
-        if (urlMatch) {
-          projectRef = urlMatch[1];
-          console.log('[Supabase Token Extraction] Extracted project ref from URL:', projectRef);
-        }
+      const hostname = window.location.hostname;
+      if (!hostname.includes('supabase.com')) {
+        return { success: false, error: 'Not on Supabase domain' };
       }
-      
-      // Try to extract access token from localStorage
-      let accessToken = null;
-      
-      // Method 1: Check for Supabase session in localStorage
-      try {
-        const supabaseAuthKeys = Object.keys(localStorage).filter(key => 
-          key.startsWith('sb-') && key.includes('-auth-token')
-        );
         
-        for (const key of supabaseAuthKeys) {
-          const authData = localStorage.getItem(key);
-          if (authData) {
-            const parsed = JSON.parse(authData);
-            if (parsed.access_token) {
-              accessToken = parsed.access_token;
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        return { success: false, error: error.message };
-      }
-      
-      // Method 2: Check for personal access token in user settings/profile
-      if (!accessToken) {
-        try {
-          // Look for any stored personal access tokens
-          const personalTokenKeys = Object.keys(localStorage).filter(key => 
-            key.includes('personal') || key.includes('token') || key.includes('pat')
-          );
-          
-          for (const key of personalTokenKeys) {
-            const tokenData = localStorage.getItem(key);
-            if (tokenData && tokenData.startsWith('sbp_')) {
-              accessToken = tokenData;
-              break;
-            }
-          }
-        } catch (e) {
-          return { success: false, error: error.message };
-        }
-      }
-      
-      // Method 3: Check cookies for session tokens
-      if (!accessToken) {
-        try {
-          const cookies = document.cookie.split(';');
-          for (const cookie of cookies) {
-            const [name, value] = cookie.trim().split('=');
-            if (name && (name.includes('supabase') || name.includes('sb-')) && value) {
-              try {
-                const decoded = decodeURIComponent(value);
-                if (decoded.includes('access_token')) {
-                  const tokenMatch = decoded.match(/"access_token"\s*:\s*"([^"]+)"/);
-                  if (tokenMatch) {
-                    accessToken = tokenMatch[1];
-                    break;
-                  }
-                }
-              } catch (e) {
-                // Skip invalid cookies
-              }
-            }
-          }
-        } catch (e) {
-          return { success: false, error: error.message };
-        }
-      }
-      
-      if (!accessToken) {
-        return { success: false, error: 'No access token found in localStorage or cookies' };
-      }
-      
-      return { 
-        success: true, 
-        accessToken: accessToken, 
-        projectRef: projectRef || null 
-      };
+      return { success: true };
       
     } catch (error) {
       return { success: false, error: error.message };
@@ -121,7 +38,7 @@ export const SUPABASE_TOKEN_EXTRACTION_SCRIPT = `
  * Build Supabase token extraction script with project reference
  */
 export function buildSupabaseTokenExtractionScript(projectRef: string | null): string {
-  return SUPABASE_TOKEN_EXTRACTION_SCRIPT.replace('{{PROJECT_REF}}', projectRef || 'null');
+  return SUPABASE_TOKEN_EXTRACTION_SCRIPT;
 }
 
 /**
@@ -129,6 +46,43 @@ export function buildSupabaseTokenExtractionScript(projectRef: string | null): s
  */
 export function isSupabaseDashboardPage(url: string): boolean {
   return url.includes('supabase.com/dashboard') || url.includes('app.supabase.com');
+}
+
+/**
+ * Check if URL is Supabase login/signin page
+ */
+export function isSupabaseLoginPage(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    return (
+      parsedUrl.hostname.includes('supabase.com') &&
+      (parsedUrl.pathname.includes('/sign-in') ||
+        parsedUrl.pathname.includes('/login') ||
+        parsedUrl.pathname.includes('/auth') ||
+        parsedUrl.pathname === '/' ||
+        parsedUrl.pathname.includes('/signin'))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if URL is an authenticated Supabase dashboard page
+ */
+export function isSupabaseAuthenticatedPage(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    return (
+      parsedUrl.hostname.includes('supabase.com') &&
+      (parsedUrl.pathname.startsWith('/dashboard/project/') ||
+        parsedUrl.pathname.startsWith('/dashboard/projects') ||
+        parsedUrl.pathname.startsWith('/dashboard/account') ||
+        parsedUrl.pathname.startsWith('/dashboard/settings'))
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**

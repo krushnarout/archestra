@@ -1,5 +1,9 @@
 import { OAuthProviderDefinition } from '../provider-interface';
-import { buildSupabaseTokenExtractionScript, isSupabaseDashboardPage } from '../utils/supabase-token-extractor';
+import {
+  buildSupabaseTokenExtractionScript,
+  isSupabaseAuthenticatedPage,
+  isSupabaseLoginPage,
+} from '../utils/supabase-token-extractor';
 
 export const supabaseBrowserProvider: OAuthProviderDefinition = {
   name: 'supabase-browser',
@@ -7,7 +11,7 @@ export const supabaseBrowserProvider: OAuthProviderDefinition = {
   usePKCE: false, // Not used for browser auth
   clientId: 'browser-auth', // Placeholder
 
-  // Token pattern is required but handled by browser auth mapping
+  // Token pattern for Supabase access tokens
   tokenEnvVarPattern: {
     accessToken: 'SUPABASE_ACCESS_TOKEN', // Maps to primary_token
   },
@@ -16,7 +20,6 @@ export const supabaseBrowserProvider: OAuthProviderDefinition = {
   browserAuthConfig: {
     enabled: true,
     loginUrl: 'https://supabase.com/dashboard/sign-in',
-    workspacePattern: /supabase\.com\/dashboard\/project\/([a-zA-Z0-9-_]+)/,
 
     // Map browser tokens to environment variables
     tokenMapping: {
@@ -27,7 +30,6 @@ export const supabaseBrowserProvider: OAuthProviderDefinition = {
       // Only allow navigation to official Supabase domains
       try {
         const parsedUrl = new URL(url);
-        // Allow "supabase.com", "app.supabase.com", and "*.supabase.com"
         const hostname = parsedUrl.hostname;
         return (
           hostname === 'supabase.com' ||
@@ -49,9 +51,15 @@ export const supabaseBrowserProvider: OAuthProviderDefinition = {
 
       console.log('[Supabase Browser Auth] Attempting token extraction on:', url);
 
-      // Check if we're on a Supabase dashboard page
-      if (!isSupabaseDashboardPage(url)) {
-        console.log('[Supabase Browser Auth] Not on dashboard page, skipping extraction');
+      // Check if we're on a login page
+      if (isSupabaseLoginPage(url)) {
+        console.log('[Supabase Browser Auth] Still on login page, waiting for authentication');
+        return null;
+      }
+
+      // Only try to extract on authenticated pages
+      if (!isSupabaseAuthenticatedPage(url)) {
+        console.log('[Supabase Browser Auth] Not an authenticated page, waiting for user to log in');
         return null;
       }
 
@@ -64,39 +72,81 @@ export const supabaseBrowserProvider: OAuthProviderDefinition = {
           console.log('[Supabase Browser Auth] Found project reference:', projectRef);
         }
 
-        // Build and execute token extraction script
-        const script = buildSupabaseTokenExtractionScript(projectRef);
-        const result = await webContents.executeJavaScript(script);
+        const extractionScript = buildSupabaseTokenExtractionScript(projectRef);
+        const result = await webContents.executeJavaScript(extractionScript);
 
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[Supabase Browser Auth] Token extraction result:', {
-            success: result.success,
-            hasToken: !!result.accessToken,
-            projectRef: result.projectRef,
-            error: result.error,
-          });
+        console.log('[Supabase Browser Auth] Page verification result:', {
+          success: result.success,
+          error: result.error,
+        });
+
+        let accessToken = null;
+        try {
+          const tokenScript = `
+            (function() {
+              try {
+                // Look for Supabase auth tokens in localStorage
+                for (let i = 0; i < localStorage.length; i++) {
+                  const key = localStorage.key(i);
+                  if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
+                    const value = localStorage.getItem(key);
+                    if (value) {
+                      try {
+                        const parsed = JSON.parse(value);
+                        
+                        // Check for access_token
+                        if (parsed.access_token) {
+                          return parsed.access_token;
+                        }
+                        
+                        if (parsed.session && parsed.session.access_token) {
+                          return parsed.session.access_token;
+                        }
+                        
+                        if (parsed.user && parsed.session && parsed.session.access_token) {
+                          return parsed.session.access_token;
+                        }
+                      } catch (parseError) {
+                        continue;
+                      }
+                    }
+                  }
+                }
+                
+                return null;
+              } catch (error) {
+                return null;
+              }
+            })();
+          `;
+
+          accessToken = await webContents.executeJavaScript(tokenScript);
+          console.log('[Supabase Browser Auth] Found access token:', !!accessToken);
+        } catch (error) {
+          console.error('[Supabase Browser Auth] Error extracting token from localStorage:', error);
         }
 
-        if (result.success && result.accessToken) {
+        if (result.success && accessToken) {
+          console.log('[Supabase Browser Auth] Successfully extracted access token');
+
           return {
-            primary_token: result.accessToken,
-            project_ref: result.projectRef,
+            primary_token: accessToken,
+            project_ref: projectRef,
             extracted_from: url,
           };
-        } else {
-          console.error('[Supabase Browser Auth] Token extraction failed:', result.error);
-          return null;
         }
+
+        if (!result.success) {
+          console.error('[Supabase Browser Auth] Page verification failed:', result.error);
+        } else if (!accessToken) {
+          console.error('[Supabase Browser Auth] Missing access token (localStorage not found)');
+        }
+        return null;
       } catch (error) {
         console.error('[Supabase Browser Auth] Token extraction failed:', error);
         return null;
       }
     },
-  },
-
-  discoveryConfig: {
-    baseUrl: 'https://supabase.com',
-    enabled: false, // Browser auth doesn't use OAuth discovery
   },
 
   metadata: {
