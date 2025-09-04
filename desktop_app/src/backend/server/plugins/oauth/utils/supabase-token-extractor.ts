@@ -23,7 +23,6 @@ export const SUPABASE_TOKEN_EXTRACTION_SCRIPT = `
       
       // Try to extract project reference from URL
       let projectRef = '{{PROJECT_REF}}';
-      console.log('[Supabase Token Extraction] Context project ref:', projectRef || 'none');
       
       if (!projectRef || projectRef === 'null') {
         const urlMatch = window.location.pathname.match(/\/dashboard\/project\/([a-zA-Z0-9-_]+)/);
@@ -48,13 +47,12 @@ export const SUPABASE_TOKEN_EXTRACTION_SCRIPT = `
             const parsed = JSON.parse(authData);
             if (parsed.access_token) {
               accessToken = parsed.access_token;
-              console.log('[Supabase Token Extraction] Found access token in localStorage key:', key);
               break;
             }
           }
         }
       } catch (e) {
-        console.log('[Supabase Token Extraction] Error checking localStorage:', e.message);
+        return { success: false, error: error.message };
       }
       
       // Method 2: Check for personal access token in user settings/profile
@@ -69,12 +67,11 @@ export const SUPABASE_TOKEN_EXTRACTION_SCRIPT = `
             const tokenData = localStorage.getItem(key);
             if (tokenData && tokenData.startsWith('sbp_')) {
               accessToken = tokenData;
-              console.log('[Supabase Token Extraction] Found personal access token in localStorage key:', key);
               break;
             }
           }
         } catch (e) {
-          console.log('[Supabase Token Extraction] Error checking for personal tokens:', e.message);
+          return { success: false, error: error.message };
         }
       }
       
@@ -91,7 +88,6 @@ export const SUPABASE_TOKEN_EXTRACTION_SCRIPT = `
                   const tokenMatch = decoded.match(/"access_token"\s*:\s*"([^"]+)"/);
                   if (tokenMatch) {
                     accessToken = tokenMatch[1];
-                    console.log('[Supabase Token Extraction] Found access token in cookie:', name);
                     break;
                   }
                 }
@@ -101,7 +97,7 @@ export const SUPABASE_TOKEN_EXTRACTION_SCRIPT = `
             }
           }
         } catch (e) {
-          console.log('[Supabase Token Extraction] Error checking cookies:', e.message);
+          return { success: false, error: error.message };
         }
       }
       

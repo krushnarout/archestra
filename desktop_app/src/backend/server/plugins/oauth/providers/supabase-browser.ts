@@ -68,12 +68,14 @@ export const supabaseBrowserProvider: OAuthProviderDefinition = {
         const script = buildSupabaseTokenExtractionScript(projectRef);
         const result = await webContents.executeJavaScript(script);
 
-        console.log('[Supabase Browser Auth] Token extraction result:', {
-          success: result.success,
-          hasToken: !!result.accessToken,
-          projectRef: result.projectRef,
-          error: result.error,
-        });
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Supabase Browser Auth] Token extraction result:', {
+            success: result.success,
+            hasToken: !!result.accessToken,
+            projectRef: result.projectRef,
+            error: result.error,
+          });
+        }
 
         if (result.success && result.accessToken) {
           return {
