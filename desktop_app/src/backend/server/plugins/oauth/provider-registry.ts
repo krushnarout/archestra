@@ -3,6 +3,7 @@ import { googleProvider } from './providers/google';
 import { linkedinBrowserProvider } from './providers/linkedin-browser';
 import { slackProvider } from './providers/slack';
 import { slackBrowserProvider } from './providers/slack-browser';
+import { supabaseBrowserProvider } from './providers/supabase-browser';
 
 /**
  * Registry of OAuth providers with extensible token handling.
@@ -17,6 +18,7 @@ export const oauthProviders: OAuthProviderRegistry = {
   slack: slackProvider,
   'slack-browser': slackBrowserProvider,
   'linkedin-browser': linkedinBrowserProvider,
+  'supabase-browser': supabaseBrowserProvider,
 };
 
 /**
@@ -45,4 +47,4 @@ export function getOAuthProviderNames(): string[] {
 }
 
 // Re-export individual providers for direct access if needed
-export { googleProvider, slackProvider, slackBrowserProvider, linkedinBrowserProvider };
+export { googleProvider, slackProvider, slackBrowserProvider, linkedinBrowserProvider, supabaseBrowserProvider };

@@ -1,0 +1,120 @@
+{
+  "dxt_version": "1.0.0",
+  "version": "1.0.0",
+  "name": "supabase-community__supabase-mcp",
+  "display_name": "supabase-mcp",
+  "description": "Connect Supabase to your AI assistants",
+  "author": {
+    "name": "supabase-community"
+  },
+  "stars": 0,
+  "quality_score": 66,
+  "programming_language": "TypeScript",
+  "tools": [
+    {
+      "name": "query_database",
+      "description": "Execute SQL queries on Supabase database"
+    },
+    {
+      "name": "list_tables",
+      "description": "List all tables in the database"
+    },
+    {
+      "name": "describe_table",
+      "description": "Get schema information for a specific table"
+    }
+  ],
+  "prompts": [],
+  "license": "MIT",
+  "github_info": {
+    "owner": "supabase-community",
+    "repo": "supabase-mcp",
+    "url": "https://github.com/supabase-community/supabase-mcp",
+    "name": "supabase-mcp",
+    "path": null,
+    "stars": 0,
+    "contributors": 1,
+    "issues": 0
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "@supabase/mcp-server-supabase:latest",
+    "mcp_config": {
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest", "--read-only", "--project-ref=${user_config.supabase_project_ref}"],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${user_config.supabase_access_token}"
+      }
+    }
+  },
+  "server_docker": {
+    "command": "docker",
+    "args": ["run", "--rm", "-i", "-e", "SUPABASE_ACCESS_TOKEN", "supabase/mcp-server-supabase:latest", "--read-only", "--project-ref=${user_config.supabase_project_ref}"],
+    "env": {
+      "SUPABASE_ACCESS_TOKEN": "${user_config.supabase_access_token}"
+    }
+  },
+  "capabilities": {
+    "implementing_prompts": false,
+    "implementing_resources": true,
+    "implementing_tools": true,
+    "implementing_sampling": false,
+    "implementing_roots": false,
+    "implementing_logging": false,
+    "implementing_stdio": true,
+    "implementing_streamable_http": false,
+    "implementing_oauth2": false
+  },
+  "dependencies": [
+    {
+      "importance": 10,
+      "name": "@supabase/mcp-server-supabase"
+    },
+    {
+      "importance": 9,
+      "name": "@supabase/mcp-utils"
+    },
+    {
+      "importance": 8,
+      "name": "supabase-js"
+    }
+  ],
+  "user_config": {
+    "supabase_access_token": {
+      "type": "string",
+      "title": "Supabase Personal Access Token",
+      "description": "Your Supabase personal access token. Go to your Supabase settings and create a personal access token.",
+      "required": true,
+      "sensitive": true
+    },
+    "supabase_project_ref": {
+      "type": "string",
+      "title": "Supabase Project Reference",
+      "description": "Your Supabase project reference ID. You can find this under Project ID in your Supabase project settings.",
+      "required": true,
+      "sensitive": false
+    }
+  },
+  "archestra_config": {
+    "oauth": {
+      "provider": "supabase",
+      "required": false
+    },
+    "browser_based": {
+      "required": true
+    },
+    "client_config_permutations": {
+      "mcpServers": {
+        "supabase-mcp-server-docker": {
+          "command": "docker",
+          "args": ["run", "--rm", "-i", "-e", "SUPABASE_ACCESS_TOKEN", "supabase/mcp-server-supabase:latest", "--read-only", "--project-ref=<project-ref>"],
+          "env": {
+            "SUPABASE_ACCESS_TOKEN": "<personal-access-token>"
+          }
+        }
+      }
+    }
+  },
+  "evaluation_model": "gpt-4o",
+  "last_scraped_at": "2025-01-25T00:00:00.000Z"
+}
