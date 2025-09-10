@@ -14,7 +14,6 @@ export {
   slackProvider,
   slackBrowserProvider,
   linkedinBrowserProvider,
-  supabaseBrowserProvider,
 } from './provider-registry';
 
 /**
