@@ -1,7 +1,7 @@
 {
   "name": "Archestra",
   "productName": "Archestra",
-  "version": "0.0.2-alpha",
+  "version": "0.0.3-alpha",
   "description": "Enterprise MCP platform for AI Agents",
   "license": "MIT",
   "repository": {
@@ -36,16 +36,16 @@
   },
   "packageManager": "pnpm@10.15.1",
   "devDependencies": {
-    "@electron-forge/cli": "^7.8.2",
-    "@electron-forge/maker-deb": "^7.8.2",
+    "@electron-forge/cli": "^7.9.0",
+    "@electron-forge/maker-deb": "^7.9.0",
+    "@electron-forge/maker-dmg": "^7.9.0",
     "@electron-forge/maker-rpm": "^7.8.2",
-    "@electron-forge/maker-squirrel": "^7.8.2",
-    "@electron-forge/maker-zip": "^7.8.2",
-    "@electron-forge/plugin-auto-unpack-natives": "^7.8.2",
-    "@electron-forge/plugin-fuses": "^7.8.2",
-    "@electron-forge/plugin-vite": "^7.8.2",
-    "@electron-forge/publisher-github": "^7.8.3",
-    "@electron-forge/shared-types": "^7.8.3",
+    "@electron-forge/maker-squirrel": "^7.9.0",
+    "@electron-forge/maker-zip": "^7.9.0",
+    "@electron-forge/plugin-fuses": "^7.9.0",
+    "@electron-forge/plugin-vite": "^7.9.0",
+    "@electron-forge/publisher-github": "^7.9.0",
+    "@electron-forge/shared-types": "^7.9.0",
     "@electron/fuses": "^2.0.0",
     "@electron/rebuild": "^4.0.1",
     "@hey-api/openapi-ts": "^0.80.14",
@@ -122,7 +122,7 @@
     "electron-log": "^5.4.3",
     "electron-squirrel-startup": "^1.0.1",
     "fastify": "^5.5.0",
-    "fastify-mcp": "^2.0.3",
+    "fastify-mcp": "^2.0.7",
     "fastify-type-provider-zod": "^5.0.3",
     "lucide-react": "^0.540.0",
     "ollama": "^0.5.17",
@@ -148,13 +148,18 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "better-sqlite3",
       "electron",
-      "better-sqlite3"
+      "fs-xattr",
+      "macos-alias"
     ],
     "ignoredBuiltDependencies": [
       "@tailwindcss/oxide",
+      "bufferutil",
       "electron-winstaller",
-      "esbuild"
+      "esbuild",
+      "sharp",
+      "utf-8-validate"
     ]
   },
   "lint-staged": {

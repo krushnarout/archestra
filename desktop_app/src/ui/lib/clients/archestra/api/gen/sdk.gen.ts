@@ -81,6 +81,9 @@ import type {
   StartGenericOAuthData,
   StartGenericOAuthErrors,
   StartGenericOAuthResponses,
+  StoreOAuthCodeData,
+  StoreOAuthCodeErrors,
+  StoreOAuthCodeResponses,
   UninstallMcpServerData,
   UninstallMcpServerResponses,
   UpdateChatData,
@@ -107,6 +110,22 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
    * used to access values that aren't defined as part of the SDK function.
    */
   meta?: Record<string, unknown>;
+};
+
+/**
+ * Store OAuth authorization code from deep link callback (internal API)
+ */
+export const storeOAuthCode = <ThrowOnError extends boolean = false>(
+  options: Options<StoreOAuthCodeData, ThrowOnError>
+) => {
+  return (options.client ?? _heyApiClient).post<StoreOAuthCodeResponses, StoreOAuthCodeErrors, ThrowOnError>({
+    url: '/api/oauth/store-code',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
 };
 
 /**

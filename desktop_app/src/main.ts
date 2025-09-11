@@ -70,9 +70,9 @@ function resolveIconFilename(): string | undefined {
   const isMac = process.platform === 'darwin';
   const isWin = process.platform === 'win32';
   const repoRoot = process.cwd();
-  const projectIconsDir = path.join(repoRoot, 'icons');
-  const siblingIconsFromBuild = path.join(__dirname, '../../icons');
-  const packagedIconsDir = path.join(process.resourcesPath, 'icons');
+  const projectIconsDir = path.join(repoRoot, 'assets', 'icons');
+  const siblingIconsFromBuild = path.join(__dirname, '../../assets', 'icons');
+  const packagedIconsDir = path.join(process.resourcesPath, 'assets', 'icons');
 
   const candidates: string[] = isMac ? ['icon.icns', 'icon.png'] : isWin ? ['icon.ico', 'icon.png'] : ['icon.png'];
   const searchDirs = app.isPackaged
@@ -166,6 +166,9 @@ async function startBackendServer(): Promise<void> {
 
     // Connect to the Archestra MCP server after Fastify is running
     try {
+      // Add a small delay to ensure the MCP endpoint is ready
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
       await ArchestraMcpClient.connect();
       log.info('Archestra MCP client connected successfully');
     } catch (error) {
@@ -206,6 +209,74 @@ ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });
 
+ipcMain.handle('get-system-info', () => {
+  const os = require('os');
+  const { execSync } = require('child_process');
+
+  // Get CPU info
+  const cpus = os.cpus();
+  const cpuModel = cpus[0]?.model || 'Unknown';
+  const cpuCores = cpus.length;
+
+  // Get memory info
+  const totalMemory = os.totalmem();
+  const freeMemory = os.freemem();
+
+  // Get disk info (macOS/Linux using df command, Windows using wmic)
+  let diskInfo = { total: 0, free: 0, freePercent: '0' };
+  try {
+    if (process.platform === 'win32') {
+      const output = execSync('wmic logicaldisk get size,freespace,caption', { encoding: 'utf8' });
+      const lines = output.trim().split('\n').slice(1);
+      let totalSize = 0;
+      let totalFree = 0;
+      lines.forEach((line: string) => {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 3 && parts[1] && parts[2]) {
+          totalFree += parseInt(parts[1]) || 0;
+          totalSize += parseInt(parts[2]) || 0;
+        }
+      });
+      diskInfo.total = totalSize;
+      diskInfo.free = totalFree;
+      diskInfo.freePercent = totalSize > 0 ? ((totalFree / totalSize) * 100).toFixed(1) : '0';
+    } else {
+      // macOS and Linux
+      const output = execSync('df -k /', { encoding: 'utf8' });
+      const lines = output.trim().split('\n');
+      const dataLine = lines[1];
+      const parts = dataLine.split(/\s+/);
+      const total = parseInt(parts[1]) * 1024; // Convert from KB to bytes
+      const used = parseInt(parts[2]) * 1024;
+      const available = parseInt(parts[3]) * 1024;
+      diskInfo.total = total;
+      diskInfo.free = available;
+      diskInfo.freePercent = total > 0 ? ((available / total) * 100).toFixed(1) : '0';
+    }
+  } catch (error) {
+    console.error('Error getting disk info:', error);
+  }
+
+  // Format sizes to human-readable
+  const formatBytes = (bytes: number) => {
+    const gb = bytes / (1024 * 1024 * 1024);
+    return gb.toFixed(2) + ' GB';
+  };
+
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    osVersion: os.release(),
+    nodeVersion: process.versions.node,
+    electronVersion: process.versions.electron,
+    cpu: `${cpuModel} (${cpuCores} cores)`,
+    totalMemory: formatBytes(totalMemory),
+    freeMemory: formatBytes(freeMemory),
+    totalDisk: formatBytes(diskInfo.total),
+    freeDisk: formatBytes(diskInfo.free),
+  };
+});
+
 // Set up OAuth callback handler
 ipcMain.handle('oauth-callback', async (_event, params: any) => {
   log.info('OAuth callback received:', params);
@@ -224,6 +295,62 @@ const handleProtocol = (url: string) => {
   if (url.startsWith('archestra-ai://oauth-callback')) {
     const urlObj = new URL(url);
     const params = Object.fromEntries(urlObj.searchParams.entries());
+
+    // Store authorization code for MCP OAuth flows using proxy
+    if (params.code && params.state) {
+      log.info('📥 Received OAuth callback with code and state, sending to backend server...');
+
+      // Send authorization code to backend server via HTTP request
+      const serverPort = process.env.ARCHESTRA_API_SERVER_PORT || '54587';
+      const serverUrl = `http://localhost:${serverPort}/api/oauth/store-code`;
+
+      log.info('🌐 About to send HTTP request to backend server');
+      log.info('📍 Target URL:', serverUrl);
+      log.info('🔌 Server port:', serverPort);
+      log.info('📦 Request body:', JSON.stringify({ state: params.state, code: params.code }));
+
+      fetch(serverUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          state: params.state,
+          code: params.code,
+        }),
+      })
+        .then((response) => {
+          log.info('📥 Received response from backend server');
+          log.info('📊 Response status:', response.status);
+          log.info('📋 Response headers:', Object.fromEntries(response.headers.entries()));
+
+          if (response.ok) {
+            log.info('✅ HTTP request successful, parsing JSON response...');
+            return response.json();
+          } else {
+            log.error('❌ HTTP request failed with status:', response.status);
+            return response.text().then((errorText) => {
+              log.error('📄 Error response body:', errorText);
+              throw new Error(`HTTP ${response.status}: ${errorText}`);
+            });
+          }
+        })
+        .then((result) => {
+          log.info('✅ Successfully sent authorization code to backend server');
+          log.info('📨 Backend server response:', result);
+        })
+        .catch((error) => {
+          log.error('❌ Failed to send authorization code to backend server');
+          log.error('🔍 Error type:', error.constructor.name);
+          log.error('📝 Error message:', error.message);
+          log.error('📚 Error stack:', error.stack);
+
+          // Check if it's a network error
+          if (error.cause) {
+            log.error('🔗 Error cause:', error.cause);
+          }
+        });
+    }
 
     // Send to renderer process
     if (mainWindow && !mainWindow.isDestroyed()) {
