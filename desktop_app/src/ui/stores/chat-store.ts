@@ -1,3 +1,4 @@
+import { UIMessage } from 'ai';
 import { create } from 'zustand';
 
 import config from '@ui/config';
@@ -7,7 +8,6 @@ import {
   getChatById,
   getChatSelectedTools,
   getChats,
-  selectChatTools,
   updateChat,
 } from '@ui/lib/clients/archestra/api/gen';
 import { initializeChat } from '@ui/lib/utils/chat';
@@ -23,6 +23,8 @@ interface ChatState {
   isLoadingChats: boolean;
   pendingPrompts: Map<string, string>;
   draftMessages: Map<number, string>; // chatId -> draft content
+  editingMessageId: string | null;
+  editingMessageContent: string;
 }
 
 interface ChatActions {
@@ -39,6 +41,14 @@ interface ChatActions {
   saveDraftMessage: (chatId: number, content: string) => void;
   getDraftMessage: (chatId: number) => string;
   clearDraftMessage: (chatId: number) => void;
+
+  // Message editing actions
+  startEditMessage: (messageId: string, currentMessageContent: string) => void;
+  cancelEditMessage: () => void;
+  saveEditMessage: (messageId: string, messages: UIMessage[]) => void;
+  deleteMessage: (messageId: string, messages: UIMessage[]) => void;
+  setEditingMessageContent: (content: string) => void;
+  updateMessages: (chatId: number, messages: UIMessage[]) => void;
 }
 
 type ChatStore = ChatState & ChatActions;
@@ -55,12 +65,39 @@ const listenForChatTitleUpdates = () => {
   });
 };
 
+/**
+ * Listen for token usage updates from the backend via WebSocket
+ */
+const listenForTokenUsageUpdates = () => {
+  return websocketService.subscribe('chat-token-usage-updated', (message) => {
+    const { chatId, totalPromptTokens, totalCompletionTokens, totalTokens, lastModel, lastContextWindow } =
+      message.payload;
+
+    useChatStore.setState((state) => ({
+      chats: state.chats.map((chat) =>
+        chat.id === chatId
+          ? {
+              ...chat,
+              totalPromptTokens,
+              totalCompletionTokens,
+              totalTokens,
+              lastModel,
+              lastContextWindow,
+            }
+          : chat
+      ),
+    }));
+  });
+};
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   // State
   chats: [],
   currentChatSessionId: null,
   isLoadingChats: false,
   pendingPrompts: new Map<string, string>(),
+  editingMessageId: null,
+  editingMessageContent: '',
 
   setPendingPrompts: (sessionId: string, prompt: string) => {
     set((state) => {
@@ -272,6 +309,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     try {
       listenForChatTitleUpdates();
+      listenForTokenUsageUpdates();
     } catch (error) {
       console.error('Failed to establish WebSocket connection:', error);
     }
@@ -300,6 +338,61 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       newDrafts.delete(chatId);
       return { draftMessages: newDrafts };
     });
+  },
+
+  startEditMessage: (editingMessageId: string, editingMessageContent: string) => {
+    set({ editingMessageId, editingMessageContent });
+  },
+
+  cancelEditMessage: () => {
+    set({ editingMessageId: null, editingMessageContent: '' });
+  },
+
+  setEditingMessageContent: (editingMessageContent: string) => {
+    set({ editingMessageContent });
+  },
+
+  saveEditMessage: (messageId: string, messages: UIMessage[]) => {
+    const { editingMessageContent, cancelEditMessage } = get();
+    if (!editingMessageContent.trim()) return;
+
+    const updatedMessages = messages.map((msg) => {
+      if (msg.id === messageId) {
+        // Update the message content
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          return {
+            ...msg,
+            parts: [{ type: 'text', text: editingMessageContent }],
+          } as UIMessage;
+        }
+      }
+      return msg;
+    });
+
+    // Update the messages in the current chat
+    const currentChat = get().getCurrentChat();
+    if (currentChat) {
+      get().updateMessages(currentChat.id, updatedMessages);
+    }
+
+    // Clear editing state
+    cancelEditMessage();
+  },
+
+  deleteMessage: (messageId: string, messages: UIMessage[]) => {
+    const updatedMessages = messages.filter((msg) => msg.id !== messageId);
+
+    // Update the messages in the current chat
+    const currentChat = get().getCurrentChat();
+    if (currentChat) {
+      get().updateMessages(currentChat.id, updatedMessages);
+    }
+  },
+
+  updateMessages: (chatId: number, messages: UIMessage[]) => {
+    set((state) => ({
+      chats: state.chats.map((chat) => (chat.id === chatId ? { ...chat, messages } : chat)),
+    }));
   },
 }));
 

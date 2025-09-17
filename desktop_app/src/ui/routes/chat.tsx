@@ -8,29 +8,47 @@ import ChatInput from '@ui/components/Chat/ChatInput';
 import EmptyChatState from '@ui/components/Chat/EmptyChatState';
 import SystemPrompt from '@ui/components/Chat/SystemPrompt';
 import config from '@ui/config';
-import { useMessageActions } from '@ui/hooks/useMessageActions';
 import { getAllMemories } from '@ui/lib/clients/archestra/api/gen';
-import { useChatStore, useCloudProvidersStore, useOllamaStore, useToolsStore } from '@ui/stores';
+import { useChatStore, useCloudProvidersStore, useDeveloperModeStore, useOllamaStore, useToolsStore } from '@ui/stores';
 import { useStatusBarStore } from '@ui/stores/status-bar-store';
 
 import { DEFAULT_ARCHESTRA_TOOLS } from '../../constants';
+
+const {
+  archestra: { chatStreamBaseUrl },
+  chat: { systemMemoriesMessageId },
+} = config;
 
 export const Route = createFileRoute('/chat')({
   component: ChatPage,
 });
 
 function ChatPage() {
-  const { getCurrentChat, getCurrentChatTitle, saveDraftMessage, getDraftMessage, clearDraftMessage } = useChatStore();
+  const {
+    getCurrentChat,
+    getCurrentChatTitle,
+    saveDraftMessage,
+    getDraftMessage,
+    clearDraftMessage,
+    editingMessageId,
+    editingMessageContent,
+    startEditMessage,
+    cancelEditMessage,
+    saveEditMessage,
+    deleteMessage,
+    setEditingMessageContent,
+    updateMessages,
+  } = useChatStore();
   const { selectedToolIds, setOnlyTools } = useToolsStore();
   const { selectedModel } = useOllamaStore();
   const { availableCloudProviderModels } = useCloudProvidersStore();
   const { setChatInference } = useStatusBarStore();
+  const { getSystemPrompt } = useDeveloperModeStore();
   const [hasLoadedMemories, setHasLoadedMemories] = useState(false);
   const [isLoadingMemories, setIsLoadingMemories] = useState(false);
 
   const currentChat = getCurrentChat();
   const currentChatSessionId = currentChat?.sessionId || '';
-  const currentChatMessages = currentChat?.messages || [];
   const currentChatTitle = getCurrentChatTitle();
 
   // Get current input from draft messages
@@ -54,23 +72,39 @@ function ChatPage() {
   const selectedToolIdsRef = useRef(selectedToolIds);
   selectedToolIdsRef.current = selectedToolIds;
 
+  const systemPrompt = getSystemPrompt();
+  const systemPromptRef = useRef(systemPrompt);
+  systemPromptRef.current = systemPrompt;
+
   const transport = useMemo(() => {
-    const apiEndpoint = `${config.archestra.chatStreamBaseUrl}/stream`;
+    const apiEndpoint = `${chatStreamBaseUrl}/stream`;
 
     return new DefaultChatTransport({
       api: apiEndpoint,
       prepareSendMessagesRequest: ({ id, messages }) => {
         const currentModel = selectedModelRef.current;
         const currentCloudProviderModels = availableCloudProviderModelsRef.current;
-        const currentSelectedToolIds = selectedToolIdsRef.current;
+        const currentSystemPrompt = systemPromptRef.current;
         const currentChat = getCurrentChat();
 
         const cloudModel = currentCloudProviderModels.find((m) => m.id === currentModel);
         const provider = cloudModel ? cloudModel.provider : 'ollama';
 
+        // Prepend system prompt as a system message if it exists
+        const messagesWithSystemPrompt = currentSystemPrompt
+          ? [
+              {
+                id: 'system-prompt',
+                role: 'system',
+                parts: [{ type: 'text', text: currentSystemPrompt }],
+              },
+              ...messages,
+            ]
+          : messages;
+
         return {
           body: {
-            messages,
+            messages: messagesWithSystemPrompt,
             model: currentModel || 'llama3.1:8b',
             sessionId: id || currentChatSessionId,
             provider: provider,
@@ -89,6 +123,25 @@ function ChatPage() {
     transport,
     onError: (error) => {
       console.error('Chat error:', error);
+      // Add error message to the chat display
+      const errorText =
+        typeof error === 'string' ? error : error.message || 'An error occurred while processing your request.';
+      const errorMessage: UIMessage = {
+        id: `error-${Date.now()}`,
+        role: 'error' as any, // Custom error role
+        parts: [
+          {
+            type: 'text',
+            text: errorText,
+          },
+        ],
+      };
+      // Add the error message to the current messages
+      setMessages((prevMessages) => [...prevMessages, errorMessage]);
+      // Also save to the store so it persists
+      if (currentChat) {
+        updateMessages(currentChat.id, [...messages, errorMessage]);
+      }
     },
   });
 
@@ -123,14 +176,18 @@ function ChatPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionStartTime, setSubmissionStartTime] = useState<number>(Date.now());
 
-  // Use the message actions hook
-  const { editingMessageId, editingContent, setEditingContent, startEdit, cancelEdit, saveEdit, deleteMessage } =
-    useMessageActions({
-      messages,
-      setMessages,
-      sendMessage,
-      sessionId: currentChatSessionId,
-    });
+  // Wrapper functions for message editing actions
+  const handleSaveEdit = (messageId: string) => {
+    saveEditMessage(messageId, messages);
+    // Also update local messages state
+    setMessages(messages);
+  };
+
+  const handleDeleteMessage = (messageId: string) => {
+    deleteMessage(messageId, messages);
+    // Also update local messages state
+    setMessages(messages.filter((msg) => msg.id !== messageId));
+  };
 
   // Handle regeneration for specific message index
   const handleRegenerateMessage = async (messageIndex: number) => {
@@ -211,20 +268,51 @@ function ChatPage() {
     }
   }, [status, regeneratingIndex, fullMessagesBackup, messages]);
 
+  // Add a ref to track the last loaded chat
+  const lastLoadedChatIdRef = useRef<string | null>(null);
+
   // Load messages from database when chat changes
   useEffect(() => {
-    // Only update messages if we have a valid chat
-    if (currentChat && currentChatSessionId) {
-      if (currentChatMessages && currentChatMessages.length > 0) {
+    // Only sync messages when switching to a different chat
+    // Don't sync when the same chat object updates (title, tokens, etc.)
+    if (currentChatSessionId && currentChatSessionId !== lastLoadedChatIdRef.current) {
+      const chat = getCurrentChat();
+      if (chat && chat.messages && chat.messages.length > 0) {
         // Messages are already UIMessage type
-        setMessages(currentChatMessages);
+        setMessages(chat.messages);
       } else {
         // Clear messages when chat exists but has no messages
         setMessages([]);
       }
+      lastLoadedChatIdRef.current = currentChatSessionId;
     }
-    // Don't call setMessages when there's no chat to avoid triggering updates during deletion
-  }, [currentChatSessionId, currentChatMessages, currentChat]); // Now also depend on currentChat
+  }, [currentChatSessionId, getCurrentChat]); // Only depend on session ID and the getter function
+
+  // Add debounced message sync from useChat to store
+  const messageSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    // Sync messages back to store with debouncing
+    // Only sync when we have a valid chat and messages
+    if (currentChat && messages.length > 0 && !isLoading) {
+      // Clear existing timeout
+      if (messageSyncTimeoutRef.current) {
+        clearTimeout(messageSyncTimeoutRef.current);
+      }
+
+      // Debounce to avoid excessive updates during streaming
+      messageSyncTimeoutRef.current = setTimeout(() => {
+        updateMessages(currentChat.id, messages);
+      }, 1000); // 1 second debounce
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (messageSyncTimeoutRef.current) {
+        clearTimeout(messageSyncTimeoutRef.current);
+      }
+    };
+  }, [messages, currentChat?.id, isLoading, updateMessages]);
 
   // Simple debounce implementation
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -275,7 +363,7 @@ function ChatPage() {
 
           // Add a system message with the memories (but don't display it)
           const systemMessage: UIMessage = {
-            id: 'system-memories',
+            id: systemMemoriesMessageId,
             role: 'system',
             parts: [{ type: 'text', text: `Previous memories loaded:\n${memoriesText}` }],
           };
@@ -445,12 +533,12 @@ function ChatPage() {
             sessionId={currentChatSessionId}
             messages={regeneratingIndex !== null && fullMessagesBackup.length > 0 ? fullMessagesBackup : messages}
             editingMessageId={editingMessageId}
-            editingContent={editingContent}
-            onEditStart={startEdit}
-            onEditCancel={cancelEdit}
-            onEditSave={saveEdit}
-            onEditChange={setEditingContent}
-            onDeleteMessage={deleteMessage}
+            editingContent={editingMessageContent}
+            onEditStart={startEditMessage}
+            onEditCancel={cancelEditMessage}
+            onEditSave={handleSaveEdit}
+            onEditChange={setEditingMessageContent}
+            onDeleteMessage={handleDeleteMessage}
             onRegenerateMessage={handleRegenerateMessage}
             isRegenerating={regeneratingIndex !== null || isLoading}
             regeneratingIndex={regeneratingIndex}
