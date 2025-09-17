@@ -1,6 +1,7 @@
 import { BrowserAuthProviderDefinition, BrowserAuthProviderRegistry } from './provider-interface';
 import { linkedinBrowserProvider } from './providers/linkedin-browser';
 import { slackBrowserProvider } from './providers/slack-browser';
+import { supabaseBrowserProvider } from './providers/supabase-browser';
 
 /**
  * Registry of browser authentication providers.
@@ -12,6 +13,7 @@ import { slackBrowserProvider } from './providers/slack-browser';
 export const browserAuthProviders: BrowserAuthProviderRegistry = {
   'slack-browser': slackBrowserProvider,
   'linkedin-browser': linkedinBrowserProvider,
+  'supabase-browser': supabaseBrowserProvider,
 };
 
 /**
@@ -46,4 +48,4 @@ export const getOAuthProviderNames = getBrowserAuthProviderNames;
 export const oauthProviders = browserAuthProviders;
 
 // Re-export individual providers for direct access if needed
-export { slackBrowserProvider, linkedinBrowserProvider };
+export { linkedinBrowserProvider, slackBrowserProvider, supabaseBrowserProvider };
